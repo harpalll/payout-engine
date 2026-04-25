@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from payouts.models import BankAccount, LedgerEntry, Merchant
+from payouts.models import BankAccount, IdempotencyKey, LedgerEntry, Merchant, Payout
 
 
 class Command(BaseCommand):
@@ -12,8 +12,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write("Seeding database...")
 
-        # Clear existing data
+        # Clear existing data (order matters due to foreign keys)
+        IdempotencyKey.objects.all().delete()
         LedgerEntry.objects.all().delete()
+        Payout.objects.all().delete()
         BankAccount.objects.all().delete()
         Merchant.objects.all().delete()
 

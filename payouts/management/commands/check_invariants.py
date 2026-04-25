@@ -19,6 +19,8 @@ class Command(BaseCommand):
 
             derived_balance = merchant.available_balance
 
+            print(f"Merchant: {merchant.name}, Ledger Sum: {ledger_sum}, Dervied Balance: {derived_balance}")
+
             if ledger_sum != derived_balance:
                 errors.append(
                     f"MISMATCH: {merchant.name} (id={merchant.id}) "
