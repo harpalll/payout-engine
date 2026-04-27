@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchMerchants,
   fetchBalance,
@@ -10,6 +10,35 @@ import {
 
 function formatPaise(paise) {
   return `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+}
+
+function Skeleton({ className = '' }) {
+  return <div className={`animate-pulse bg-gray-200 rounded ${className}`} />;
+}
+
+function CardSkeleton() {
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-5">
+      <Skeleton className="h-4 w-24 mb-3" />
+      <Skeleton className="h-8 w-32" />
+    </div>
+  );
+}
+
+function TableSkeleton({ cols = 4, rows = 5 }) {
+  return (
+    <tbody className="divide-y divide-gray-100">
+      {Array.from({ length: rows }).map((_, r) => (
+        <tr key={r}>
+          {Array.from({ length: cols }).map((_, c) => (
+            <td key={c} className="px-4 py-3">
+              <Skeleton className="h-4 w-full" />
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  );
 }
 
 function StatusBadge({ status }) {
@@ -31,9 +60,11 @@ export default function App() {
   const [selectedMerchant, setSelectedMerchant] = useState(null);
   const [balance, setBalance] = useState(null);
   const [bankAccounts, setBankAccounts] = useState([]);
-  const [payouts, setPayouts] = useState([]);
-  const [ledger, setLedger] = useState([]);
+  const [payouts, setPayouts] = useState(null);
+  const [ledger, setLedger] = useState(null);
   const [tab, setTab] = useState('payouts');
+  const [loading, setLoading] = useState(true);
+  const [merchantsLoading, setMerchantsLoading] = useState(true);
 
   // Payout form
   const [amount, setAmount] = useState('');
@@ -42,42 +73,65 @@ export default function App() {
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
 
+  // Track current merchant to avoid stale responses
+  const merchantRef = useRef(null);
+
   // Load merchants on mount
   useEffect(() => {
     fetchMerchants().then((data) => {
       const list = data.results || data;
       setMerchants(list);
       if (list.length > 0) setSelectedMerchant(list[0].id);
+      setMerchantsLoading(false);
     });
   }, []);
 
   // Load merchant data when selected merchant changes
-  const loadMerchantData = useCallback(() => {
+  const loadMerchantData = useCallback(async (isPolling = false) => {
     if (!selectedMerchant) return;
-    fetchBalance(selectedMerchant).then(setBalance);
-    fetchBankAccounts(selectedMerchant).then((data) => {
-      const list = data.results || data;
-      setBankAccounts(list);
-      if (list.length > 0 && !selectedBank) setSelectedBank(list[0].id);
-    });
-    fetchPayouts(selectedMerchant).then((data) => setPayouts(data.results || data));
-    fetchLedger(selectedMerchant).then((data) => setLedger(data.results || data));
+
+    const currentId = selectedMerchant;
+    merchantRef.current = currentId;
+
+    if (!isPolling) setLoading(true);
+
+    const [balanceData, bankData, payoutData, ledgerData] = await Promise.all([
+      fetchBalance(currentId),
+      fetchBankAccounts(currentId),
+      fetchPayouts(currentId),
+      fetchLedger(currentId),
+    ]);
+
+    // Only apply if this merchant is still selected (avoid stale updates)
+    if (merchantRef.current !== currentId) return;
+
+    setBalance(balanceData);
+    const banks = bankData.results || bankData;
+    setBankAccounts(banks);
+    if (banks.length > 0) setSelectedBank((prev) => prev || banks[0].id);
+    setPayouts(payoutData.results || payoutData);
+    setLedger(ledgerData.results || ledgerData);
+    setLoading(false);
   }, [selectedMerchant]);
 
+  // Clear stale data and reload on merchant switch
   useEffect(() => {
+    setBalance(null);
+    setBankAccounts([]);
+    setPayouts(null);
+    setLedger(null);
+    setSelectedBank('');
+    setFormError('');
+    setFormSuccess('');
     loadMerchantData();
-  }, [loadMerchantData]);
+  }, [selectedMerchant, loadMerchantData]);
 
   // Poll every 3s for payout status updates
   useEffect(() => {
     if (!selectedMerchant) return;
-    const interval = setInterval(() => {
-      fetchBalance(selectedMerchant).then(setBalance);
-      fetchPayouts(selectedMerchant).then((data) => setPayouts(data.results || data));
-      fetchLedger(selectedMerchant).then((data) => setLedger(data.results || data));
-    }, 3000);
+    const interval = setInterval(() => loadMerchantData(true), 3000);
     return () => clearInterval(interval);
-  }, [selectedMerchant]);
+  }, [selectedMerchant, loadMerchantData]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -118,48 +172,57 @@ export default function App() {
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <h1 className="text-xl font-semibold text-gray-900">Payout Engine</h1>
-          <select
-            className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white"
-            value={selectedMerchant || ''}
-            onChange={(e) => {
-              setSelectedMerchant(e.target.value);
-              setSelectedBank('');
-            }}
-          >
-            {merchants.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
+          {merchantsLoading ? (
+            <Skeleton className="h-8 w-48" />
+          ) : (
+            <select
+              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white"
+              value={selectedMerchant || ''}
+              onChange={(e) => setSelectedMerchant(e.target.value)}
+            >
+              {merchants.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-6 space-y-6">
         {/* Balance Cards */}
-        {balance && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white rounded-lg border border-gray-200 p-5">
-              <p className="text-sm text-gray-500">Available Balance</p>
-              <p className="text-2xl font-semibold text-gray-900 mt-1">
-                {formatPaise(balance.available_balance)}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-5">
-              <p className="text-sm text-gray-500">Held Balance</p>
-              <p className="text-2xl font-semibold text-yellow-600 mt-1">
-                {formatPaise(balance.held_balance)}
-              </p>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-5">
-              <p className="text-sm text-gray-500">Merchant</p>
-              <p className="text-lg font-medium text-gray-900 mt-1">
-                {currentMerchant?.name}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5 font-mono truncate">
-                {selectedMerchant}
-              </p>
-            </div>
-          </div>
-        )}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {loading || !balance ? (
+            <>
+              <CardSkeleton />
+              <CardSkeleton />
+              <CardSkeleton />
+            </>
+          ) : (
+            <>
+              <div className="bg-white rounded-lg border border-gray-200 p-5">
+                <p className="text-sm text-gray-500">Available Balance</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {formatPaise(balance.available_balance)}
+                </p>
+              </div>
+              <div className="bg-white rounded-lg border border-gray-200 p-5">
+                <p className="text-sm text-gray-500">Held Balance</p>
+                <p className="text-2xl font-semibold text-yellow-600 mt-1">
+                  {formatPaise(balance.held_balance)}
+                </p>
+              </div>
+              <div className="bg-white rounded-lg border border-gray-200 p-5">
+                <p className="text-sm text-gray-500">Merchant</p>
+                <p className="text-lg font-medium text-gray-900 mt-1">
+                  {currentMerchant?.name}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5 font-mono truncate">
+                  {selectedMerchant}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* Create Payout Form */}
         <div className="bg-white rounded-lg border border-gray-200 p-5">
@@ -180,22 +243,26 @@ export default function App() {
             </div>
             <div className="flex-1 min-w-[200px]">
               <label className="block text-xs text-gray-500 mb-1">Bank Account</label>
-              <select
-                value={selectedBank}
-                onChange={(e) => setSelectedBank(e.target.value)}
-                className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white"
-                required
-              >
-                {bankAccounts.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.account_holder_name} - {b.ifsc}
-                  </option>
-                ))}
-              </select>
+              {loading ? (
+                <Skeleton className="h-8 w-full" />
+              ) : (
+                <select
+                  value={selectedBank}
+                  onChange={(e) => setSelectedBank(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white"
+                  required
+                >
+                  {bankAccounts.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.account_holder_name} - {b.ifsc}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || loading}
               className="px-4 py-1.5 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-800 disabled:opacity-50"
             >
               {submitting ? 'Submitting...' : 'Submit Payout'}
@@ -237,11 +304,15 @@ export default function App() {
                   <th className="px-4 py-3">Created</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {payouts.length === 0 ? (
+              {loading || payouts === null ? (
+                <TableSkeleton cols={5} rows={4} />
+              ) : payouts.length === 0 ? (
+                <tbody>
                   <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No payouts yet</td></tr>
-                ) : (
-                  payouts.map((p) => (
+                </tbody>
+              ) : (
+                <tbody className="divide-y divide-gray-100">
+                  {payouts.map((p) => (
                     <tr key={p.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 font-mono text-xs truncate max-w-[160px]">{p.id}</td>
                       <td className="px-4 py-3 font-medium">{formatPaise(p.amount_paise)}</td>
@@ -249,9 +320,9 @@ export default function App() {
                       <td className="px-4 py-3">{p.attempts}</td>
                       <td className="px-4 py-3 text-gray-500">{new Date(p.created_at).toLocaleString()}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
+                  ))}
+                </tbody>
+              )}
             </table>
           </div>
         )}
@@ -268,11 +339,15 @@ export default function App() {
                   <th className="px-4 py-3">Date</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                {ledger.length === 0 ? (
+              {loading || ledger === null ? (
+                <TableSkeleton cols={4} rows={5} />
+              ) : ledger.length === 0 ? (
+                <tbody>
                   <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400">No entries</td></tr>
-                ) : (
-                  ledger.map((e) => (
+                </tbody>
+              ) : (
+                <tbody className="divide-y divide-gray-100">
+                  {ledger.map((e) => (
                     <tr key={e.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
@@ -287,9 +362,9 @@ export default function App() {
                       <td className="px-4 py-3 text-gray-700">{e.description}</td>
                       <td className="px-4 py-3 text-gray-500">{new Date(e.created_at).toLocaleString()}</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
+                  ))}
+                </tbody>
+              )}
             </table>
           </div>
         )}
