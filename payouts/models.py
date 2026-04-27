@@ -151,14 +151,23 @@ class Payout(models.Model):
         """
         Enforce state machine. Raises ValueError on illegal transition.
         This is where failed->completed is blocked.
+        Also creates an audit log entry for observability.
         """
         allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
         if new_status not in allowed:
             raise ValueError(
                 f"Illegal state transition: {self.status} -> {new_status}"
             )
+        old_status = self.status
         self.status = new_status
         self.save(update_fields=["status", "updated_at"])
+
+        # Record the transition for audit trail
+        PayoutAuditLog.objects.create(
+            payout=self,
+            from_status=old_status,
+            to_status=new_status,
+        )
 
 
 class IdempotencyKey(models.Model):
@@ -188,3 +197,29 @@ class IdempotencyKey(models.Model):
 
     def __str__(self):
         return f"{self.merchant.name} - {self.key}"
+
+
+class PayoutAuditLog(models.Model):
+    """
+    Immutable audit trail for every payout state transition.
+    Records who changed what, when, and from/to which state.
+    Critical for debugging money-moving systems in production.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    payout = models.ForeignKey(
+        Payout, on_delete=models.CASCADE, related_name="audit_logs"
+    )
+    from_status = models.CharField(max_length=10)
+    to_status = models.CharField(max_length=10)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "payout_audit_logs"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["payout", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"Payout {self.payout_id}: {self.from_status} → {self.to_status}"

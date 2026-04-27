@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import BankAccount, IdempotencyKey, LedgerEntry, Merchant, Payout
+from .models import BankAccount, IdempotencyKey, LedgerEntry, Merchant, Payout, PayoutAuditLog
 
 
 @admin.register(Merchant)
@@ -39,3 +39,11 @@ class IdempotencyKeyAdmin(admin.ModelAdmin):
     list_display = ("merchant", "key", "status_code", "created_at", "expires_at")
     search_fields = ("merchant__name", "key")
     readonly_fields = ("id", "created_at")
+
+
+@admin.register(PayoutAuditLog)
+class PayoutAuditLogAdmin(admin.ModelAdmin):
+    list_display = ("payout", "from_status", "to_status", "created_at")
+    list_filter = ("from_status", "to_status")
+    search_fields = ("payout__id",)
+    readonly_fields = ("id", "payout", "from_status", "to_status", "created_at")
