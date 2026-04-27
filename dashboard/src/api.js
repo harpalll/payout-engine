@@ -1,4 +1,5 @@
-const API = '/api/v1';
+const BASE = import.meta.env.VITE_API_URL || '';
+const API = `${BASE}/api/v1`;
 
 export async function fetchMerchants() {
   const res = await fetch(`${API}/merchants/`);
