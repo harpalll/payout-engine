@@ -20,7 +20,6 @@ class BankAccountSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_masked_account(self, obj):
-        """Show only last 4 digits: ****4321"""
         return f"****{obj.account_number[-4:]}"
 
 
@@ -40,7 +39,6 @@ class LedgerEntrySerializer(serializers.ModelSerializer):
 
 class PayoutSerializer(serializers.ModelSerializer):
     bank_account = BankAccountSerializer(read_only=True)
-    # Render UUIDs as strings so response can be stored in JSONField
     id = serializers.CharField(read_only=True)
     merchant = serializers.CharField(source="merchant_id", read_only=True)
 
@@ -61,11 +59,6 @@ class PayoutSerializer(serializers.ModelSerializer):
 
 
 class PayoutRequestSerializer(serializers.Serializer):
-    """
-    Input validation for POST /api/v1/payouts/
-    Like a Zod schema — validates the request body before business logic runs.
-    """
-
     amount_paise = serializers.IntegerField(min_value=1)
     bank_account_id = serializers.UUIDField()
 
@@ -79,15 +72,11 @@ class PayoutRequestSerializer(serializers.Serializer):
         if not merchant:
             raise serializers.ValidationError("Merchant context is required.")
         try:
-            bank_account = BankAccount.objects.get(
-                id=value, merchant=merchant, is_active=True
-            )
+            BankAccount.objects.get(id=value, merchant=merchant, is_active=True)
         except BankAccount.DoesNotExist:
             raise serializers.ValidationError(
                 "Bank account not found or does not belong to this merchant."
             )
-        # Store for use in the view
-        self._bank_account = bank_account
         return value
 
 

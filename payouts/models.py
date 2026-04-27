@@ -19,7 +19,7 @@ class Merchant(models.Model):
 
     @property
     def available_balance(self):
-        """Balance derived from ledger. Never stored, always computed."""
+        """Balance = SUM(all ledger entries). Never stored, always computed."""
         result = self.ledger_entries.aggregate(
             balance=Coalesce(Sum("amount_paise"), 0)
         )
@@ -27,14 +27,13 @@ class Merchant(models.Model):
 
     @property
     def held_balance(self):
-        """Sum of funds held by pending/processing payouts."""
+        """Funds locked by in-flight payouts (pending + processing)."""
         result = self.ledger_entries.filter(
             entry_type=LedgerEntry.EntryType.DEBIT,
             payout__status__in=[Payout.Status.PENDING, Payout.Status.PROCESSING],
         ).aggregate(
             held=Coalesce(Sum("amount_paise"), 0)
         )
-        # Debits are stored as negative, so negate to get positive held amount
         return abs(result["held"])
 
 
@@ -58,10 +57,9 @@ class BankAccount(models.Model):
 
 class LedgerEntry(models.Model):
     """
-    Immutable ledger entry. Balance is always SUM(amount_paise) for a merchant.
-    - credit:   positive amount (customer payment received)
-    - debit:    negative amount (funds held for payout)
-    - reversal: positive amount (funds returned on failed payout)
+    Immutable ledger entry.
+    credit = positive (payment received), debit = negative (payout hold),
+    reversal = positive (failed payout refund).
     """
 
     class EntryType(models.TextChoices):
@@ -74,9 +72,7 @@ class LedgerEntry(models.Model):
         Merchant, on_delete=models.CASCADE, related_name="ledger_entries"
     )
     entry_type = models.CharField(max_length=10, choices=EntryType.choices)
-    amount_paise = models.BigIntegerField(
-        help_text="Positive for credit/reversal, negative for debit"
-    )
+    amount_paise = models.BigIntegerField()
     payout = models.ForeignKey(
         "Payout",
         on_delete=models.SET_NULL,
@@ -100,10 +96,7 @@ class LedgerEntry(models.Model):
 
 
 class Payout(models.Model):
-    """
-    Payout lifecycle: pending -> processing -> completed | failed
-    No backward transitions allowed.
-    """
+    """Payout lifecycle: pending -> processing -> completed | failed."""
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -111,12 +104,11 @@ class Payout(models.Model):
         COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
 
-    # Legal state transitions
     ALLOWED_TRANSITIONS = {
         "pending": {"processing"},
         "processing": {"completed", "failed"},
-        "completed": set(),  # terminal state
-        "failed": set(),  # terminal state
+        "completed": set(),
+        "failed": set(),
     }
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -148,11 +140,7 @@ class Payout(models.Model):
         return f"Payout {self.id} - {self.amount_paise} paise ({self.status})"
 
     def transition_to(self, new_status):
-        """
-        Enforce state machine. Raises ValueError on illegal transition.
-        This is where failed->completed is blocked.
-        Also creates an audit log entry for observability.
-        """
+        """Enforce state machine. Raises ValueError on illegal transition."""
         allowed = self.ALLOWED_TRANSITIONS.get(self.status, set())
         if new_status not in allowed:
             raise ValueError(
@@ -162,7 +150,6 @@ class Payout(models.Model):
         self.status = new_status
         self.save(update_fields=["status", "updated_at"])
 
-        # Record the transition for audit trail
         PayoutAuditLog.objects.create(
             payout=self,
             from_status=old_status,
@@ -171,10 +158,7 @@ class Payout(models.Model):
 
 
 class IdempotencyKey(models.Model):
-    """
-    Stores idempotency keys per merchant to prevent duplicate payout creation.
-    Keys expire after 24 hours.
-    """
+    """Per-merchant idempotency keys with 24h expiry."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     merchant = models.ForeignKey(
@@ -200,11 +184,7 @@ class IdempotencyKey(models.Model):
 
 
 class PayoutAuditLog(models.Model):
-    """
-    Immutable audit trail for every payout state transition.
-    Records who changed what, when, and from/to which state.
-    Critical for debugging money-moving systems in production.
-    """
+    """Immutable audit trail for payout state transitions."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     payout = models.ForeignKey(
@@ -222,4 +202,4 @@ class PayoutAuditLog(models.Model):
         ]
 
     def __str__(self):
-        return f"Payout {self.payout_id}: {self.from_status} → {self.to_status}"
+        return f"Payout {self.payout_id}: {self.from_status} -> {self.to_status}"
