@@ -5,6 +5,11 @@ from . import views
 urlpatterns = [
     # Merchant endpoints
     path(
+        "merchants/",
+        views.MerchantListView.as_view(),
+        name="merchant-list",
+    ),
+    path(
         "merchants/<uuid:pk>/",
         views.MerchantDetailView.as_view(),
         name="merchant-detail",

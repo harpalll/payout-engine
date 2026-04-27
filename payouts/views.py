@@ -13,6 +13,13 @@ from .serializers import (
 from .services import InsufficientBalance, create_payout
 
 
+class MerchantListView(generics.ListAPIView):
+    """GET /api/v1/merchants/"""
+
+    queryset = Merchant.objects.all().order_by("name")
+    serializer_class = MerchantSerializer
+
+
 class MerchantDetailView(generics.RetrieveAPIView):
     """GET /api/v1/merchants/<id>/"""
 
