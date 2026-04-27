@@ -112,6 +112,12 @@ def create_payout(merchant_id, amount_paise, bank_account_id, idempotency_key):
             merchant, idempotency_key, response_data, 201
         )
 
+    # Queue background processing AFTER the transaction commits.
+    # If we queued inside the transaction and it rolled back,
+    # the worker would try to process a nonexistent payout.
+    from .tasks import process_payout
+    process_payout.delay(str(payout.id))
+
     return response_data, 201, True
 
 
