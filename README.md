@@ -7,21 +7,22 @@ Merchant payout processing system with ledger-based balance, concurrency control
 - **Dashboard:** https://payout-engine-dashboard.onrender.com
 - **API:** https://payout-engine-api.onrender.com
 - **Health Check:** https://payout-engine-api.onrender.com/health/
+- **Uptime Status:** https://stats.uptimerobot.com/wcYqjiRFZa
 
 > First load may take ~30s if the service is waking up from sleep.
 
 ## Architecture
 
-<!-- TODO: Add Excalidraw architecture diagram here -->
+![Architecture Diagram](./playto-architecture.svg)
 
 ## Stack
 
-| Layer | Tech |
-|-------|------|
-| Backend | Django 5.1, Django REST Framework |
-| Frontend | React 19, Tailwind CSS v4, Vite |
-| Database | PostgreSQL (Neon) |
-| Queue | Celery + Redis (Upstash) |
+| Layer      | Tech                                |
+| ---------- | ----------------------------------- |
+| Backend    | Django 5.1, Django REST Framework   |
+| Frontend   | React 19, Tailwind CSS v4, Vite     |
+| Database   | PostgreSQL (Neon)                   |
+| Queue      | Celery + Redis (Upstash)            |
 | Deployment | Render (API + Worker + Static Site) |
 
 ## Local Setup
@@ -95,15 +96,15 @@ python manage.py check_invariants
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/payouts/` | Create payout (requires `Idempotency-Key` and `X-Merchant-Id` headers) |
-| `GET` | `/api/v1/payouts/list/?merchant_id=<uuid>` | List payouts for a merchant |
-| `GET` | `/api/v1/payouts/<id>/` | Get payout details |
-| `GET` | `/api/v1/merchants/` | List all merchants |
-| `GET` | `/api/v1/merchants/<id>/balance/` | Get available and held balance |
-| `GET` | `/api/v1/merchants/<id>/ledger/` | Paginated ledger entries |
-| `GET` | `/api/v1/merchants/<id>/bank-accounts/` | List bank accounts |
+| Method | Endpoint                                   | Description                                                            |
+| ------ | ------------------------------------------ | ---------------------------------------------------------------------- |
+| `POST` | `/api/v1/payouts/`                         | Create payout (requires `Idempotency-Key` and `X-Merchant-Id` headers) |
+| `GET`  | `/api/v1/payouts/list/?merchant_id=<uuid>` | List payouts for a merchant                                            |
+| `GET`  | `/api/v1/payouts/<id>/`                    | Get payout details                                                     |
+| `GET`  | `/api/v1/merchants/`                       | List all merchants                                                     |
+| `GET`  | `/api/v1/merchants/<id>/balance/`          | Get available and held balance                                         |
+| `GET`  | `/api/v1/merchants/<id>/ledger/`           | Paginated ledger entries                                               |
+| `GET`  | `/api/v1/merchants/<id>/bank-accounts/`    | List bank accounts                                                     |
 
 ### Example: Create a Payout
 
