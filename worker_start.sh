@@ -2,7 +2,7 @@
 set -e
 
 # Start Celery worker + beat in background
-celery -A config worker -l info --beat &
+celery -A config worker -l info --beat --concurrency=2 &
 
 # Health server in foreground — Render needs this to detect the port
 python -c "
